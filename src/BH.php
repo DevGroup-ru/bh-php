@@ -26,6 +26,8 @@ class BH
      */
     protected $matchers = [];
 
+    protected $declByBlock = [];
+
     /**
      * Неймспейс для библиотек. Сюда можно писать различный функционал для дальнейшего использования в шаблонах.
      *
@@ -95,7 +97,7 @@ class BH
 
     protected $matcherCalls = 0;
 
-    protected $matcher = null;
+    protected $matcherBuilt = false;
 
     /**
      * Buffer for toHtml
@@ -111,6 +113,7 @@ class BH
     {
         $this->lib = new \ArrayObject([], \ArrayObject::ARRAY_AS_PROPS);
     }
+
 
     /**
      * Задает опции шаблонизации.
@@ -262,7 +265,9 @@ class BH
         $this->lastMatchId++;
 
         // cleanup cached matcher to rebuild it on next render
-        $this->matcher = null;
+
+        $this->matcherBuilt = false;
+
 
         return $this;
     }
@@ -301,125 +306,110 @@ class BH
         return $this->match('$after', $matcher);
     }
 
-    /**
-     * Вставляет вызов шаблона в очередь вызова.
-     *
-     * @param array $res
-     * @param String $fnId
-     * @param Number $index
-     */
-    protected static function pushMatcher(&$res, $fnId, $index)
-    {
-        $res[] = ('      $json->_m[' . $fnId . '] = true;');
-        $res[] = ('      $subRes = $ms[' . $index . ']["fn"]($ctx, $json);');
-        $res[] = ('      if ($subRes !== null) { return ($subRes ?: ""); }');
-        $res[] = ('      if ($json->_stop) return;');
-    }
-
-    /**
-     * Вспомогательный метод для компиляции шаблонов с целью их быстрого дальнейшего исполнения.
-     * @return string
-     */
     public function buildMatcher()
     {
-        $res = [];
-        $allMatchers = $this->matchers;
-        $declarations = [];
-        // Matchers->iterate
-        for ($i = sizeof($allMatchers) - 1; $i >= 0; $i--) {
-            $matcherInfo = $allMatchers[$i];
-            $decl = ['fn' => $matcherInfo['fn'], '__id' => $matcherInfo['__id'], 'index' => $i]
-                + static::parseBemCssClasses($matcherInfo['expr'], $this->optModsDelimiter);
-            $declarations[] = $decl;
+        if ($this->matcherBuilt === false) {
+
+            $this->matcherCalls = 0;
+            $declarations = [];
+            // Matchers->iterate
+            for ($i = sizeof($this->matchers) - 1; $i >= 0; $i--) {
+                $matcherInfo = $this->matchers[$i];
+                $decl = ['fn' => $matcherInfo['fn'], '__id' => $matcherInfo['__id'], 'index' => $i]
+                    + static::parseBemCssClasses($matcherInfo['expr'], $this->optModsDelimiter);
+                $declarations[] = $decl;
+            }
+            $this->declByBlock = static::groupBy($declarations, 'block');
+            foreach ($this->declByBlock as $blockName => &$blockData) {
+                if ($blockName !== '$before' && $blockName !== '$after') {
+                    $blockData = static::groupBy($blockData, 'elem');
+                }
+            }
+            $this->matcherBuilt = true;
         }
+    }
 
-        $res[] = 'return function ($ctx, $json) use ($ms) {';
-
-        $declByBlock = static::groupBy($declarations, 'block');
-
+    public function matcherImpl($ctx, $json)
+    {
+        $declByBlock = $this->declByBlock;
+        // run before
         if (isset($declByBlock['$before'])) {
             foreach ($declByBlock['$before'] as $decl) {
-                static::pushMatcher($res, $decl['__id'], $decl['index']);
+                $fnId = $decl['__id'];
+
+                $json->_m[$fnId] = true;
+                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                if ($subRes !== null) {
+                    return ($subRes ? : "");
+                }
+                if ($json->_stop) {
+                    return null;
+                }
+
             }
         }
 
+        // loop through all matchers
         $afterEach = isset($declByBlock['$after']) ? $declByBlock['$after'] : null;
         unset($declByBlock['$before'], $declByBlock['$after']);
 
-        if ($declByBlock) {
-            $res[] = 'switch ($json->block ?: __undefined) {';
-            foreach ($declByBlock as $blockName => $blockData) {
-                $res[] = 'case "' . $blockName . '":';
+        $thisBlock = $json->block ?: __undefined;
+        $thisElem = $json->elem ?: __undefined;
 
-                $res[] = '  switch ($json->elem ?: __undefined) {';
-                $declsByElem = static::groupBy($blockData, 'elem');
-                foreach ($declsByElem as $elemName => $decls) {
-                    $elemCase = $elemName === __undefined ? '__undefined' : '"' . $elemName . '"';
-                    $res[] = '  case ' . $elemCase . ':';
+        foreach ($declByBlock as $blockName => $blockData) {
+            if ($blockName === $thisBlock) {
+                foreach ($blockData as $elemName => $decls) {
+                    if ($thisElem === $elemName) {
+                        foreach ($decls as $decl) {
+                            $__id = $decl['__id'];
+                            $valid = !isset($json->_m[$__id]);
+                            if ($valid && isset($decl['elemMod'])) {
+                                $modKey = $decl['elemMod'];
 
-                    foreach ($decls as $decl) {
-                        $__id = $decl['__id'];
-                        $conds = [];
-                        $conds[] = ('!isset($json->_m[' . $__id . '])');
-                        if (isset($decl['elemMod'])) {
-                            $modKey = $decl['elemMod'];
-                            $conds[] = (
-                                'isset($json->elemMods) && $json->elemMods->{"' . $modKey . '"} === ' .
-                                ($decl['elemModVal'] === true ? 'true' : '"' . $decl['elemModVal'] . '"'));
+                                $valid = $valid && isset($json->elemMods)
+                                    && $json->elemMods->{$modKey} === $decl['elemModVal'];
+                            }
+                            if ($valid && isset($decl['blockMod'])) {
+                                $modKey = $decl['blockMod'];
+                                $valid = $valid && isset($json->mods)
+                                    && $json->mods->{$modKey} === $decl['blockModVal'];
+                            }
+                            if ($valid === true) {
+                                $json->_m[$__id] = true;
+                                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                                if ($subRes !== null) {
+                                    return ($subRes ? : "");
+                                }
+                                if ($json->_stop) {
+                                    return null;
+                                }
+                            }
                         }
-                        if (isset($decl['blockMod'])) {
-                            $modKey = $decl["blockMod"];
-                            $conds[] = (
-                                'isset($json->mods) && $json->mods->{"' . $modKey . '"} === ' .
-                                ($decl['blockModVal'] === true ? 'true' : '"' . $decl['blockModVal'] . '"'));
-                        }
-
-                        $res[] = ('    if (' . join(' && ', $conds) . ') {');
-                        static::pushMatcher($res, $__id, $decl['index']);
-                        $res[] = ('    }');
+                        break;
                     }
-
-                    $res[] = ('    break;');
                 }
-                $res[] = ('}');
-                $res[] = ('  break;');
+                break;
             }
-            $res[] = ('}');
         }
 
-        if ($afterEach) {
+
+        // run after
+        if ($afterEach !== null) {
             foreach ($afterEach as $decl) {
-                static::pushMatcher($res, $decl['__id'], $decl['index']);
+                $fnId = $decl['__id'];
+
+                $json->_m[$fnId] = true;
+                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                if ($subRes !== null) {
+                    return ($subRes ? : "");
+                }
+                if ($json->_stop) {
+                    return null;
+                }
+
             }
         }
-
-        $res[] = ('};');
-
-        return "return function (\$ms) {\n" . join("\n", $res) . "\n};";
-    }
-
-    public function getMatcher()
-    {
-        if ($this->matcher) {
-            return $this->matcher;
-        }
-
-        // debugging purposes only (!!!)
-        // $key = md5(join('|', array_map(function ($e) { return $e['expr']; }, $this->_matchers)));
-        // $file = "./tmp/bh-matchers-{$key}.php";
-        // $constructor = @include $file;
-        // if (!$constructor) {
-            $code = $this->buildMatcher();
-        //     file_put_contents($file, "<?php\n" . $code);
-        //     $constructor = include $file;
-        /** @var \Closure $constructor */
-            $constructor = eval($code);
-        // }
-
-        $this->matcherCalls = 0;
-        $this->matcher = $constructor($this->matchers);
-
-        return $this->matcher;
+        return null;
     }
 
     /**
@@ -475,10 +465,10 @@ class BH
             null
         );
 
-        if (!$this->matcher) {
-            $this->getMatcher();
+        if (!$this->matcherBuilt) {
+            $this->buildMatcher();
         }
-        $compiledMatcher = $this->matcher;
+
 
         $processContent = !$ignoreContent;
         $infiniteLoopDetection = $this->infiniteLoopDetection;
@@ -559,8 +549,7 @@ class BH
                 if (!$json->_stop) {
                     $ctx->node = $step;
                     $ctx->ctx = $json;
-                    /** @var \Closure $compiledMatcher */
-                    $subRes = $compiledMatcher($ctx, $json);
+                    $subRes = $this->matcherImpl($ctx, $json);
                     if ($subRes !== null) {
                         $json = JsonCollection::normalize($subRes);
                         $step->json = $json;
@@ -748,11 +737,14 @@ class BH
         }
 
         $this->buf .= '>';
+        if ($this->optIndent !== false) {
+            $this->buf .= "\n" . str_repeat($this->optIndent, $nestingLevel+1);
+        }
         if (!empty($json->html)) {
             $this->buf .= $json->html;
 
         } elseif ($json->content !== null) {
-            $this->html($json->content, $nestingLevel+1);
+            $this->html($json->content, $nestingLevel);
         }
         $this->buf .= $identation . '</' . $tag . '>';
     }

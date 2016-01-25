@@ -233,9 +233,9 @@ class Context {
         $blockMods = $json->mods;
 
         /** @var \Closure $fm */
-        $fm = $this->bh->getMatcher();
 
-        $subRes = $fm($this, $json);
+
+        $subRes = $this->bh->matcherImpl($this, $json);
         if ($subRes !== null) {
             $this->ctx = $node->arr[$node->index] = $node->json = JsonCollection::normalize($subRes);
             $node->block = $block; // need check
