@@ -78,6 +78,7 @@ class bh_bemCssClasses extends PHPUnit_Framework_TestCase {
                 'elemModVal' => null],
             BH::parseBemCssClasses('button__control')
         );
+
     }
 
 }

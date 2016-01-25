@@ -50,11 +50,18 @@ class BH
     protected $optJsElem = true;
     protected $optEscapeContent = false;
     protected $optNobaseMods = false;
-    /*
+
+    /**
      * Разделитель модификатора от блока/элемента
      * Для БЭМ-стиля Гарри Робертса http://csswizardry.com/work/ (блок__элемент--модификатор) использовать значение '--'
+     * @var string
      */
     protected $optModsDelimiter = '_';
+
+    /**
+     * @var bool Форматировать HTML отступами
+     */
+    protected $optIndent = false;
 
     /**
      * Флаг, включающий автоматическую систему поиска зацикливаний. Следует использовать в development-режиме,
@@ -150,6 +157,9 @@ class BH
 
         if (isset($options['modsDelimiter'])) {
             $this->optModsDelimiter = $options['modsDelimiter'];
+        }
+        if (isset($options['indent'])) {
+            $this->optIndent = $options['indent'];
         }
 
         return $this;
@@ -602,7 +612,7 @@ class BH
         return $buf;
     }
 
-    public function html($json)
+    public function html($json, $nestingLevel = 0)
     {
         if (!$json) {
             $this->buf .= (string)$json;
@@ -617,7 +627,7 @@ class BH
         if (isList($json)) {
             foreach ($json as $item) {
                 if ($item !== false && $item !== null) {
-                    $this->html($item);
+                    $this->html($item, $nestingLevel+1);
                 }
             }
             return;
@@ -627,7 +637,7 @@ class BH
             if ($json->html) {
                 $this->buf .= $json->html;
             } else {
-                $this->html($json->content);
+                $this->html($json->content, $nestingLevel+1);
             }
             return;
         }
@@ -724,8 +734,13 @@ class BH
             $cls .= ($cls ? ' ' : '') . trim(self::attrEscape($json->cls));
         }
 
+        $identation = '';
+        if ($this->optIndent !== false) {
+            $identation = "\n" . str_repeat($this->optIndent, $nestingLevel);
+        }
+
         $tag = $json->tag !== null ? $json->tag : 'div';
-        $this->buf .= '<' . $tag . ($cls ? ' class="' . $cls . '"' : '') . ($attrs ? $attrs : '');
+        $this->buf .= $identation . '<' . $tag . ($cls ? ' class="' . $cls . '"' : '') . ($attrs ? $attrs : '');
 
         if (isset(static::$selfCloseHtmlTags[$tag])) {
             $this->buf .= '/>';
@@ -737,9 +752,9 @@ class BH
             $this->buf .= $json->html;
 
         } elseif ($json->content !== null) {
-            $this->html($json->content);
+            $this->html($json->content, $nestingLevel+1);
         }
-        $this->buf .= '</' . $tag . '>';
+        $this->buf .= $identation . '</' . $tag . '>';
     }
 
     // todo: add encoding here
