@@ -4,9 +4,10 @@ namespace BEM;
 
 require_once "helpers.php";
 
-class BH {
+class BH
+{
 
-    static public $_toHtmlCallId = 0;
+    static public $toHtmlCallId = 0;
 
     /**
      * Используется для идентификации шаблонов.
@@ -15,7 +16,7 @@ class BH {
      * @var integer
      * @protected
      */
-    protected $_lastMatchId = 0;
+    protected $lastMatchId = 0;
 
     /**
      * Плоский массив для хранения матчеров.
@@ -23,7 +24,7 @@ class BH {
      * @var array
      * @protected
      */
-    protected $_matchers = [];
+    protected $matchers = [];
 
     /**
      * Неймспейс для библиотек. Сюда можно писать различный функционал для дальнейшего использования в шаблонах.
@@ -33,7 +34,7 @@ class BH {
      * $bh->lib->objects = bh.lib.objects || [];
      * $bh->lib->objects.inverse = bh.lib.objects.inverse || function(obj) { ... };
      * ```
-     * @var ArrayObject
+     * @var \ArrayObject
      */
     public $lib;
 
@@ -41,14 +42,19 @@ class BH {
      * Опции BH. Задаются через setOptions.
      * @var array
      */
-    protected $_options = [];
+    protected $options = [];
 
-    protected $_optJsAttrName = 'onclick';
-    protected $_optJsAttrIsJs = true;
-    protected $_optJsCls = 'i-bem';
-    protected $_optJsElem = true;
-    protected $_optEscapeContent = false;
-    protected $_optNobaseMods = false;
+    protected $optJsAttrName = 'onclick';
+    protected $optJsAttrIsJs = true;
+    protected $optJsCls = 'i-bem';
+    protected $optJsElem = true;
+    protected $optEscapeContent = false;
+    protected $optNobaseMods = false;
+    /*
+     * Разделитель модификатора от блока/элемента
+     * Для БЭМ-стиля Гарри Робертса http://csswizardry.com/work/ (блок__элемент--модификатор) использовать значение '--'
+     */
+    protected $optModsDelimiter = '_';
 
     /**
      * Флаг, включающий автоматическую систему поиска зацикливаний. Следует использовать в development-режиме,
@@ -56,7 +62,7 @@ class BH {
      * @var boolean
      * @protected
      */
-    protected $_infiniteLoopDetection = false;
+    protected $infiniteLoopDetection = false;
 
     protected $ctx = null;
 
@@ -80,11 +86,22 @@ class BH {
         'wbr' => 1
     ];
 
+    protected $matcherCalls = 0;
+
+    protected $matcher = null;
+
+    /**
+     * Buffer for toHtml
+     * @var String
+     */
+    protected $buf = null;
+
     /**
      * BH: BEMJSON -> HTML процессор.
      * @constructor
      */
-    function __construct () {
+    public function __construct()
+    {
         $this->lib = new \ArrayObject([], \ArrayObject::ARRAY_AS_PROPS);
     }
 
@@ -100,34 +117,39 @@ class BH {
      *                     `json` — JSON-формат. Получаем `{ ... }`.
      * @return BH $this
      */
-    function setOptions ($options) {
-        $this->_options = [];
+    public function setOptions($options)
+    {
+        $this->options = [];
         foreach ($options as $k => $option) {
-            $this->_options[$k] = $options[$k];
+            $this->options[$k] = $options[$k];
         }
 
         if (isset($options['jsAttrName'])) {
-            $this->_optJsAttrName = $options['jsAttrName'];
+            $this->optJsAttrName = $options['jsAttrName'];
         }
 
         if (isset($options['jsAttrScheme'])) {
-            $this->_optJsAttrIsJs = $options['jsAttrScheme'] === 'js';
+            $this->optJsAttrIsJs = $options['jsAttrScheme'] === 'js';
         }
 
         if (isset($options['jsCls'])) {
-            $this->_optJsCls = $options['jsCls'];
+            $this->optJsCls = $options['jsCls'];
         }
 
         if (isset($options['jsElem'])) {
-            $this->_optJsElem = $options['jsElem'];
+            $this->optJsElem = $options['jsElem'];
         }
 
         if (isset($options['clsNobaseMods'])) {
-            $this->_optNobaseMods = true;
+            $this->optNobaseMods = $options['clsNobaseMods'];
         }
 
         if (isset($options['escapeContent'])) {
-            $this->_optEscapeContent = $options['escapeContent'];
+            $this->optEscapeContent = $options['escapeContent'];
+        }
+
+        if (isset($options['modsDelimiter'])) {
+            $this->optModsDelimiter = $options['modsDelimiter'];
         }
 
         return $this;
@@ -138,29 +160,32 @@ class BH {
      *
      * @return array
      */
-    function getOptions () {
-        return $this->_options;
+    public function getOptions()
+    {
+        return $this->options;
     }
 
     /**
      * Включает/выключает механизм определения зацикливаний.
      *
      * @chainable
-     * @param boolean enable
+     * @param boolean $enable
      * @return BH
      */
-    function enableInfiniteLoopDetection ($enable) {
-        $this->_infiniteLoopDetection = $enable;
+    public function enableInfiniteLoopDetection($enable)
+    {
+        $this->infiniteLoopDetection = $enable;
         return $this;
     }
 
     /**
      * Преобразует BEMJSON в HTML-код
      *
-     * @param BemJson $bemJson
+     * @param array|string $bemJson
      * @return string
      */
-    function apply ($bemJson) {
+    public function apply($bemJson)
+    {
         return $this->toHtml($this->processBemJson($bemJson));
     }
 
@@ -199,7 +224,8 @@ class BH {
      * @param callable [$matcher]
      * @return BH
      */
-    function match ($expr, $matcher = null) {
+    public function match($expr, $matcher = null)
+    {
         if (!$expr) {
             return $this;
         }
@@ -218,15 +244,15 @@ class BH {
             return $this;
         }
 
-        $this->_matchers[] = [ // better to make it via Matcher object with __invoke
+        $this->matchers[] = [ // better to make it via Matcher object with __invoke
             'expr' => $expr,
             'fn'   => $matcher,
-            '__id' => $this->_lastMatchId
+            '__id' => $this->lastMatchId
         ];
-        $this->_lastMatchId++;
+        $this->lastMatchId++;
 
         // cleanup cached matcher to rebuild it on next render
-        $this->_matcher = null;
+        $this->matcher = null;
 
         return $this;
     }
@@ -240,10 +266,11 @@ class BH {
      * });
      * ```
      *
-     * @param Closure $matcher
+     * @param \Closure $matcher
      * @return BH
      */
-    function beforeEach ($matcher) {
+    public function beforeEach($matcher)
+    {
         return $this->match('$before', $matcher);
     }
 
@@ -256,21 +283,23 @@ class BH {
      * });
      * ```
      *
-     * @param Closure $matcher
+     * @param \Closure $matcher
      * @return BH
      */
-    function afterEach ($matcher) {
+    public function afterEach($matcher)
+    {
         return $this->match('$after', $matcher);
     }
 
     /**
      * Вставляет вызов шаблона в очередь вызова.
      *
-     * @param Array $res
+     * @param array $res
      * @param String $fnId
      * @param Number $index
      */
-    static protected function pushMatcher(&$res, $fnId, $index) {
+    protected static function pushMatcher(&$res, $fnId, $index)
+    {
         $res[] = ('      $json->_m[' . $fnId . '] = true;');
         $res[] = ('      $subRes = $ms[' . $index . ']["fn"]($ctx, $json);');
         $res[] = ('      if ($subRes !== null) { return ($subRes ?: ""); }');
@@ -281,17 +310,16 @@ class BH {
      * Вспомогательный метод для компиляции шаблонов с целью их быстрого дальнейшего исполнения.
      * @return string
      */
-    function buildMatcher () {
+    public function buildMatcher()
+    {
         $res = [];
-        $vars = []; //'$bh = $this'];
-        $allMatchers = $this->_matchers;
+        $allMatchers = $this->matchers;
         $declarations = [];
         // Matchers->iterate
         for ($i = sizeof($allMatchers) - 1; $i >= 0; $i--) {
             $matcherInfo = $allMatchers[$i];
-            $expr = $matcherInfo['expr'];
             $decl = ['fn' => $matcherInfo['fn'], '__id' => $matcherInfo['__id'], 'index' => $i]
-                + static::parseBemCssClasses($matcherInfo['expr']);
+                + static::parseBemCssClasses($matcherInfo['expr'], $this->optModsDelimiter);
             $declarations[] = $decl;
         }
 
@@ -308,46 +336,46 @@ class BH {
         $afterEach = isset($declByBlock['$after']) ? $declByBlock['$after'] : null;
         unset($declByBlock['$before'], $declByBlock['$after']);
 
-        if ($declByBlock) :
-        $res[] = 'switch ($json->block ?: __undefined) {';
-        foreach ($declByBlock as $blockName => $blockData) {
-            $res[] = 'case "' . $blockName . '":';
+        if ($declByBlock) {
+            $res[] = 'switch ($json->block ?: __undefined) {';
+            foreach ($declByBlock as $blockName => $blockData) {
+                $res[] = 'case "' . $blockName . '":';
 
-            $res[] = '  switch ($json->elem ?: __undefined) {';
-            $declsByElem = static::groupBy($blockData, 'elem');
-            foreach ($declsByElem as $elemName => $decls) {
-                $elemCase = $elemName === __undefined ? '__undefined' : '"' . $elemName . '"';
-                $res[] = '  case ' . $elemCase . ':';
+                $res[] = '  switch ($json->elem ?: __undefined) {';
+                $declsByElem = static::groupBy($blockData, 'elem');
+                foreach ($declsByElem as $elemName => $decls) {
+                    $elemCase = $elemName === __undefined ? '__undefined' : '"' . $elemName . '"';
+                    $res[] = '  case ' . $elemCase . ':';
 
-                foreach ($decls as $decl) {
-                    $__id = $decl['__id'];
-                    $conds = [];
-                    $conds[] = ('!isset($json->_m[' . $__id . '])');
-                    if (isset($decl['elemMod'])) {
-                        $modKey = $decl['elemMod'];
-                        $conds[] = (
-                            'isset($json->elemMods) && $json->elemMods->{"' . $modKey . '"} === ' .
+                    foreach ($decls as $decl) {
+                        $__id = $decl['__id'];
+                        $conds = [];
+                        $conds[] = ('!isset($json->_m[' . $__id . '])');
+                        if (isset($decl['elemMod'])) {
+                            $modKey = $decl['elemMod'];
+                            $conds[] = (
+                                'isset($json->elemMods) && $json->elemMods->{"' . $modKey . '"} === ' .
                                 ($decl['elemModVal'] === true ? 'true' : '"' . $decl['elemModVal'] . '"'));
-                    }
-                    if (isset($decl['blockMod'])) {
-                        $modKey = $decl["blockMod"];
-                        $conds[] = (
-                            'isset($json->mods) && $json->mods->{"' . $modKey . '"} === ' .
+                        }
+                        if (isset($decl['blockMod'])) {
+                            $modKey = $decl["blockMod"];
+                            $conds[] = (
+                                'isset($json->mods) && $json->mods->{"' . $modKey . '"} === ' .
                                 ($decl['blockModVal'] === true ? 'true' : '"' . $decl['blockModVal'] . '"'));
+                        }
+
+                        $res[] = ('    if (' . join(' && ', $conds) . ') {');
+                        static::pushMatcher($res, $__id, $decl['index']);
+                        $res[] = ('    }');
                     }
 
-                    $res[] = ('    if (' . join(' && ', $conds) . ') {');
-                    static::pushMatcher($res, $__id, $decl['index']);
-                    $res[] = ('    }');
+                    $res[] = ('    break;');
                 }
-
-                $res[] = ('    break;');
+                $res[] = ('}');
+                $res[] = ('  break;');
             }
             $res[] = ('}');
-            $res[] = ('  break;');
         }
-        $res[] = ('}');
-        endif;
 
         if ($afterEach) {
             foreach ($afterEach as $decl) {
@@ -360,11 +388,11 @@ class BH {
         return "return function (\$ms) {\n" . join("\n", $res) . "\n};";
     }
 
-    protected $_matcherCalls = 0;
-    protected $_matcher = null;
-
-    function getMatcher () {
-        if ($this->_matcher) return $this->_matcher;
+    public function getMatcher()
+    {
+        if ($this->matcher) {
+            return $this->matcher;
+        }
 
         // debugging purposes only (!!!)
         // $key = md5(join('|', array_map(function ($e) { return $e['expr']; }, $this->_matchers)));
@@ -374,13 +402,14 @@ class BH {
             $code = $this->buildMatcher();
         //     file_put_contents($file, "<?php\n" . $code);
         //     $constructor = include $file;
+        /** @var \Closure $constructor */
             $constructor = eval($code);
         // }
 
-        $this->_matcherCalls = 0;
-        $this->_matcher = $constructor($this->_matchers);
+        $this->matcherCalls = 0;
+        $this->matcher = $constructor($this->matchers);
 
-        return $this->_matcher;
+        return $this->matcher;
     }
 
     /**
@@ -388,9 +417,11 @@ class BH {
      * @param Json|array $bemJson
      * @param string [$blockName]
      * @param boolean [$ignoreContent]
+     * @throws \Exception
      * @return Json
      */
-    function processBemJson ($bemJson, $blockName = null, $ignoreContent = null) {
+    public function processBemJson($bemJson, $blockName = null, $ignoreContent = null)
+    {
         if (empty($bemJson)) {
             return is_array($bemJson)
                 ? '<div></div>'
@@ -434,12 +465,13 @@ class BH {
             null
         );
 
-        // var compiledMatcher = (this._fastMatcher || (this._fastMatcher = Function('ms', this.buildMatcher())(this._matchers)));
-        if (!$this->_matcher) $this->getMatcher();
-        $compiledMatcher = $this->_matcher;
+        if (!$this->matcher) {
+            $this->getMatcher();
+        }
+        $compiledMatcher = $this->matcher;
 
         $processContent = !$ignoreContent;
-        $infiniteLoopDetection = $this->_infiniteLoopDetection;
+        $infiniteLoopDetection = $this->infiniteLoopDetection;
 
         $ctx = new Context($this);
 
@@ -495,18 +527,29 @@ class BH {
             if ($json instanceof Json) {
                 if ($infiniteLoopDetection) {
                     $json->_matcherCalls++;
-                    $this->_matcherCalls++;
+                    $this->matcherCalls++;
                     if ($json->_matcherCalls > 100) {
-                        throw new \Exception('Infinite json loop detected at "' . $json->block . ($json->elem ? '__' . $json->elem : '') . '".');
+                        throw new \Exception(
+                            'Infinite json loop detected at "' .
+                            $json->block .
+                            ($json->elem ? '__' . $json->elem : '') .
+                            '".'
+                        );
                     }
-                    if ($this->_matcherCalls > 1000) {
-                        throw new \Exception('Infinite matcher loop detected at "' . $json->block . ($json->elem ? '__' . $json->elem : '') . '".');
+                    if ($this->matcherCalls > 1000) {
+                        throw new \Exception(
+                            'Infinite matcher loop detected at "' .
+                            $json->block .
+                            ($json->elem ? '__' . $json->elem : '') .
+                            '".'
+                        );
                     }
                 }
 
                 if (!$json->_stop) {
                     $ctx->node = $step;
                     $ctx->ctx = $json;
+                    /** @var \Closure $compiledMatcher */
                     $subRes = $compiledMatcher($ctx, $json);
                     if ($subRes !== null) {
                         $json = JsonCollection::normalize($subRes);
@@ -546,39 +589,35 @@ class BH {
     }
 
     /**
-     * Buffer for toHtml
-     * @var String
-     */
-    protected $_buf = null;
-
-    /**
      * Превращает раскрытый BEMJSON в HTML.
-     * @param BemJson $json
+     * @param Json|array $json
      * @return string
      */
-    public function toHtml ($json) {
-        $this->_buf = '';
-        $this->_html($json);
-        $buf = $this->_buf;
-        unset($this->_buf);
+    public function toHtml($json)
+    {
+        $this->buf = '';
+        $this->html($json);
+        $buf = $this->buf;
+        unset($this->buf);
         return $buf;
     }
 
-    public function _html ($json) {
+    public function html($json)
+    {
         if (!$json) {
-            $this->_buf .= (string)$json;
+            $this->buf .= (string)$json;
             return;
         }
 
         if (is_scalar($json)) {
-            $this->_buf .= $this->_optEscapeContent ? self::xmlEscape($json) : $json;
+            $this->buf .= $this->optEscapeContent ? self::xmlEscape($json) : $json;
             return;
         }
 
         if (isList($json)) {
             foreach ($json as $item) {
                 if ($item !== false && $item !== null) {
-                    $this->_html($item);
+                    $this->html($item);
                 }
             }
             return;
@@ -586,9 +625,9 @@ class BH {
 
         if ($json->tag === false || $json->tag === '') {
             if ($json->html) {
-                $this->_buf .= $json->html;
+                $this->buf .= $json->html;
             } else {
-                $this->_html($json->content);
+                $this->html($json->content);
             }
             return;
         }
@@ -609,7 +648,7 @@ class BH {
 
         if ($json->toHtml) {
             $toHtml = $json->toHtml->bindTo($this);
-            $this->_buf .= $toHtml($json) ?: '';
+            $this->buf .= $toHtml($json) ?: '';
             return;
         }
 
@@ -619,14 +658,14 @@ class BH {
 
             $jsParams = false;
             if ($json->block) {
-                $cls = static::toBemCssClasses($json, $base, null, $this->_optNobaseMods);
+                $cls = static::toBemCssClasses($json, $base, null, $this->optNobaseMods, $this->optModsDelimiter);
                 if ($json->js !== null && $json->js !== false) {
                     $jsParams = [];
-                    $jsParams[$base] = $json->js === true ? [] : $this->_filterNulls($json->js);
+                    $jsParams[$base] = $json->js === true ? [] : $this->filterNulls($json->js);
                 }
             }
 
-            $addJSInitClass = $this->_optJsCls && ($this->_optJsElem || !$json->elem);
+            $addJSInitClass = $this->optJsCls && ($this->optJsElem || !$json->elem);
 
             if ($json->mix) {
                 foreach ($json->mix as $mix) {
@@ -644,26 +683,39 @@ class BH {
                     $mixElem = $mix->elem ?: ($mix->block ? null : ($json->block ? $json->elem : null));
                     $mixBase = $mixBlock . ($mixElem ? '__' . $mixElem : '');
 
-                    $cls .= static::toBemCssClasses($mix, $mixBase, $base, $this->_optNobaseMods);
+                    $cls .= static::toBemCssClasses(
+                        $mix,
+                        $mixBase,
+                        $base,
+                        $this->optNobaseMods,
+                        $this->optModsDelimiter
+                    );
                     if ($mix->js !== null && $mix->js !== false) {
                         $jsParams = $jsParams ?: [];
-                        $jsParams[$mixBase] = $mix->js === true ? [] : $this->_filterNulls($mix->js);
+                        $jsParams[$mixBase] = $mix->js === true ? [] : $this->filterNulls($mix->js);
                         $hasMixJsParams = true;
                         if (!$addJSInitClass) {
-                            $addJSInitClass = $mixBlock && ($this->_optJsCls && ($this->_optJsElem || !$mixElem));
+                            $addJSInitClass = $mixBlock && ($this->optJsCls && ($this->optJsElem || !$mixElem));
                         }
                     }
                 }
             }
 
             if ($jsParams) {
-                if ($addJSInitClass) $cls .= ' ' . $this->_optJsCls;
+                if ($addJSInitClass) {
+                    $cls .= ' ' . $this->optJsCls;
+                }
                 $jsData = !$hasMixJsParams && $json->js === true ?
                     '{&quot;' . $base . '&quot;:{}}' :
-                    self::attrEscape(str_replace('[]', '{}',
-                        json_encode($jsParams, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
-                $attrs .= ' ' . ($json->jsAttr ?: $this->_optJsAttrName) . '="' .
-                    ($this->_optJsAttrIsJs ? 'return ' . $jsData : $jsData) . '"';
+                    self::attrEscape(
+                        str_replace(
+                            '[]',
+                            '{}',
+                            json_encode($jsParams, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                        )
+                    );
+                $attrs .= ' ' . ($json->jsAttr ?: $this->optJsAttrName) . '="' .
+                    ($this->optJsAttrIsJs ? 'return ' . $jsData : $jsData) . '"';
             }
         }
 
@@ -673,36 +725,39 @@ class BH {
         }
 
         $tag = $json->tag !== null ? $json->tag : 'div';
-        $this->_buf .= '<' . $tag . ($cls ? ' class="' . $cls . '"' : '') . ($attrs ? $attrs : '');
+        $this->buf .= '<' . $tag . ($cls ? ' class="' . $cls . '"' : '') . ($attrs ? $attrs : '');
 
         if (isset(static::$selfCloseHtmlTags[$tag])) {
-            $this->_buf .= '/>';
+            $this->buf .= '/>';
             return;
         }
 
-        $this->_buf .= '>';
+        $this->buf .= '>';
         if (!empty($json->html)) {
-            $this->_buf .= $json->html;
+            $this->buf .= $json->html;
 
         } elseif ($json->content !== null) {
-            $this->_html($json->content);
+            $this->html($json->content);
         }
-        $this->_buf .= '</' . $tag . '>';
+        $this->buf .= '</' . $tag . '>';
     }
 
     // todo: add encoding here
-    public static function xmlEscape($s) {
+    public static function xmlEscape($s)
+    {
         return htmlspecialchars($s, ENT_NOQUOTES);
     }
 
-    public static function attrEscape($s) {
+    public static function attrEscape($s)
+    {
         if (is_bool($s)) {
             return $s ? 'true' : 'false';
         }
         return htmlspecialchars($s, ENT_QUOTES);
     }
 
-    public static function toBemCssClasses($json, $base, $parentBase = null, $nobase = false) {
+    public static function toBemCssClasses($json, $base, $parentBase = null, $nobase = false, $modsDelimiter = '_')
+    {
         $res = '';
 
         if ($parentBase !== $base) {
@@ -716,7 +771,12 @@ class BH {
         $mods = $json->elem && isset($json->elemMods) ? $json->elemMods : $json->mods;
         foreach ($mods as $k => $mod) {
             if ($mod || $mod === 0) {
-                $res .= ' ' . ($nobase ? '' : $base) . '_' . $k . ($mod === true ? '' : '_' . $mod);
+                if (is_numeric($k)) {
+                    // we have numeric-based key
+                    $res .= ' ' . ($nobase ? '' : $base) . $modsDelimiter . $mod;
+                } else {
+                    $res .= ' ' . ($nobase ? '' : $base) . $modsDelimiter . $k . ($mod === true ? '' : '_' . $mod);
+                }
             }
         }
 
@@ -724,16 +784,54 @@ class BH {
     }
 
     // @todo fixup hardcoded leveling
-    public static function parseBemCssClasses ($expr) {
+    public static function parseBemCssClasses ($expr, $modsDelimiter = '_')
+    {
         list ($blockBits, $elemBits) = explode('__', $expr . "__\1");
+        $delim = preg_quote($modsDelimiter);
 
-        list ($block, $blockMod, $blockModVal) = explode('_', $blockBits . "_\1_\1");
+        preg_match("#^(.*)($delim(.*))?$#Us", $blockBits, $matches);
+        if (isset($matches[1])) {
+            $block = $matches[1];
+        } else {
+            $block = null;
+        }
+        if (isset($matches[3])) {
+            $blockModFull = $matches[3];
+        } else {
+            $blockModFull = null;
+        }
+
+
+        list ($blockMod, $blockModVal) = explode('_', $blockModFull . "_\1", 3);
+
         $blockMod = $blockMod === "\1" ? null : $blockMod;
+        if (empty($blockMod)) {
+            $blockMod = null;
+        }
         $blockModVal = $blockMod ? ($blockModVal !== "\1" ? $blockModVal : true) : null;
+        if (empty($blockModVal)) {
+            $blockModVal = null;
+        }
 
         if ($elemBits !== "\1") {
-            list ($elem, $elemMod, $elemModVal) = explode('_', $elemBits . "_\1_\1_\1");
+
+            preg_match("#^(.*)($delim(.*))?$#Us", $elemBits, $matches);
+
+            if (isset($matches[1])) {
+                $elem = $matches[1];
+            } else {
+                $elem = null;
+            }
+            if (isset($matches[3])) {
+                $elemModFull = $matches[3];
+            } else {
+                $elemModFull = null;
+            }
+            list ($elemMod, $elemModVal) = explode('_', $elemModFull . "_\1_\1");
             $elemMod = $elemMod === "\1" ? null : $elemMod;
+            if (empty($elemMod)) {
+                $elemMod = null;
+            }
             $elemModVal = $elemMod ? ($elemModVal !== "\1" ? $elemModVal : true) : null;
         }
 
@@ -742,11 +840,12 @@ class BH {
 
     /**
      * Group up selectors by some key
-     * @param array data
-     * @param string key
+     * @param array $data
+     * @param string $key
      * @return array
      */
-    public static function groupBy ($data, $key) {
+    public static function groupBy($data, $key)
+    {
         $res = [];
         for ($i = 0, $l = sizeof($data); $i < $l; $i++) {
             $item = $data[$i];
@@ -759,9 +858,10 @@ class BH {
         return $res;
     }
 
-    protected static function _filterNulls ($arr) {
+    protected static function filterNulls($arr)
+    {
         return array_filter($arr, function ($e) {
             return $e !== null;
         });
     }
-};
+}

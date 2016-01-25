@@ -13,7 +13,7 @@ class Context {
      */
     static $lastGenId = 0;
 
-    protected $_expandoId = null;
+    protected $expandoId = null;
 
     /**
      * @var Json
@@ -27,13 +27,17 @@ class Context {
 
     public $mix;
 
+    /** @var Step */
+    public $node;
+
     /**
      * Context constructor
      * @param \BEM\BH $bh parent class
      */
-    function __construct($bh) {
+    public function __construct($bh)
+    {
         $this->bh = $bh;
-        $this->_expandoId = floor(microtime(1)*1000);
+        $this->expandoId = floor(microtime(1)*1000);
     }
 
     /**
@@ -46,7 +50,8 @@ class Context {
      * @param mixed $obj
      * @return boolean
      */
-    function isSimple ($obj) {
+    public function isSimple($obj)
+    {
         return is_scalar($obj) || is_null($obj);
     }
 
@@ -56,10 +61,11 @@ class Context {
      * ```javascript
      * obj = ctx.extend(obj, {a: 1});
      * ```
-     * @param array $target
+     * @param array|Mods $target
      * @return array
      */
-    function extend ($target) {
+    public function extend($target)
+    {
         if (!$target || is_scalar($target)) {
             $target = [];
         }
@@ -97,7 +103,8 @@ class Context {
      * ```
      * @return integer
      */
-    function position () {
+    public function position()
+    {
         $node = $this->node;
         return $node->index === 'content' ? 1 :
             isset($node->position) ? $node->position : null;
@@ -114,7 +121,8 @@ class Context {
      * ```
      * @return boolean
      */
-    function isFirst () {
+    public function isFirst()
+    {
         $node = $this->node;
         return $node->index === 'content'
             || isset($node->position) && $node->position === 1;
@@ -131,7 +139,8 @@ class Context {
      * ```
      * @return boolean
      */
-    function isLast () {
+    public function isLast()
+    {
         $node = $this->node;
         return $node->index === 'content'
             || isset($node->position) && $node->position === $node->arr->_listLength;
@@ -154,7 +163,8 @@ class Context {
      * @param boolean [$force]
      * @return Context|mixed
      */
-    function tParam ($key, $value = null, $force = false) {
+    public function tParam($key, $value = null, $force = false)
+    {
         $node = $this->node;
 
         if (func_num_args() > 1) {
@@ -177,11 +187,13 @@ class Context {
     /**
      * Применяет матчинг для переданного фрагмента BEMJSON.
      * Возвращает результат преобразований.
-     * @param BemJson $bemJson
+     * @param string|array $bemJson
      * @return array
      */
-    function process ($bemJson) {
+    public function process($bemJson)
+    {
         $prevCtx = $this->ctx;
+        /** @var Step $prevNode */
         $prevNode = $this->node;
         $res = $this->bh->processBemJson($bemJson, $prevCtx->block);
         $this->ctx = $prevCtx;
@@ -191,7 +203,8 @@ class Context {
 
     /**
      * Выполняет преобразования данного BEMJSON-элемента остальными шаблонами.
-     * Может понадобиться, например, чтобы добавить элемент в самый конец содержимого, если в базовых шаблонах в конец содержимого добавляются другие элементы.
+     * Может понадобиться, например, чтобы добавить элемент в самый конец содержимого,
+     * если в базовых шаблонах в конец содержимого добавляются другие элементы.
      * Пример:
      * ```javascript
      * bh.match('header', function(ctx) {
@@ -208,16 +221,20 @@ class Context {
      *    ], true);
      * });
      * ```
+     *
      * @return Context
      */
-    function applyBase () {
+    public function applyBase()
+    {
         $node = $this->node;
         $json = $node->json;
 
         $block = $json->block;
         $blockMods = $json->mods;
 
+        /** @var \Closure $fm */
         $fm = $this->bh->getMatcher();
+
         $subRes = $fm($this, $json);
         if ($subRes !== null) {
             $this->ctx = $node->arr[$node->index] = $node->json = JsonCollection::normalize($subRes);
@@ -242,7 +259,8 @@ class Context {
      * ```
      * @return Context
      */
-    function stop () {
+    public function stop()
+    {
         $this->ctx->_stop = true;
         return $this;
     }
@@ -252,8 +270,9 @@ class Context {
      * чтобы задать соответствие между `label` и `input`.
      * @return string
      */
-    function generateId () {
-        return 'uniq' . $this->_expandoId . (++ static::$lastGenId);
+    public function generateId()
+    {
+        return 'uniq' . $this->expandoId . (++ static::$lastGenId);
     }
 
     /**
@@ -274,7 +293,8 @@ class Context {
      * @param boolean [$force]
      * @return string|null|Context
      */
-    function mod ($key, $value = null, $force = false) {
+    public function mod($key, $value = null, $force = false)
+    {
         $field = $this->ctx->elem ? 'elemMods' : 'mods';
         if (func_num_args() > 1) {
             $mods = $this->ctx->$field;
@@ -300,7 +320,8 @@ class Context {
      * @param boolean [$force]
      * @return array|Context
      */
-    function mods ($values = null, $force = false) {
+    public function mods($values = null, $force = false)
+    {
         $field = $this->ctx->elem ? 'elemMods' : 'mods';
         $mods = $this->ctx->$field;
         if ($values === null) {
@@ -326,7 +347,8 @@ class Context {
      * @param boolean [$force]
      * @return string|null|Context
      */
-    function tag ($tagName = null, $force = false) {
+    public function tag($tagName = null, $force = false)
+    {
         if ($tagName === null) {
             return $this->ctx->tag;
         }
@@ -355,7 +377,8 @@ class Context {
      * @param boolean [$force]
      * @return array|null|Context
      */
-    function mix ($mix = null, $force = false) {
+    public function mix($mix = null, $force = false)
+    {
         if ($mix === null) {
             return $this->ctx->mix;
         }
@@ -378,7 +401,8 @@ class Context {
      * @param boolean [$force]
      * @return string|null|Context
      */
-    function attr ($key, $value = null, $force = false) {
+    public function attr($key, $value = null, $force = false)
+    {
         $attrs = $this->ctx->attrs ?: ($this->ctx->attrs = []);
         if (func_num_args() === 1) {
             return isset($attrs[$key]) ? $attrs[$key] : null;
@@ -402,9 +426,10 @@ class Context {
      * ```
      * @param array [$values]
      * @param boolean [$force]
-     * @return {Object|Context
+     * @return Object|Context
      */
-    function attrs (array $values = null, $force = false) {
+    public function attrs(array $values = null, $force = false)
+    {
         $attrs = $this->ctx->attrs ?: [];
         if ($values === null) {
             return $attrs;
@@ -429,7 +454,8 @@ class Context {
      * @param boolean [$force]
      * @return boolean|null|Context
      */
-    function bem ($bem = null, $force = false) {
+    public function bem($bem = null, $force = false)
+    {
         if ($bem === null) {
             return isset($this->ctx->bem) ? $this->ctx->bem : null;
         }
@@ -452,7 +478,8 @@ class Context {
      * @param boolean [$force]
      * @return boolean|Object|Context
      */
-    function js ($js = null, $force = false) {
+    public function js($js = null, $force = false)
+    {
         if (func_num_args() === 0) {
             return $this->ctx->js;
         }
@@ -479,7 +506,8 @@ class Context {
      * @param boolean [$force]
      * @return string|Context
      */
-    function cls ($cls = null, $force = false) {
+    public function cls($cls = null, $force = false)
+    {
         if ($cls === null) {
             return empty($this->ctx->cls) ? null : $this->ctx->cls;
         }
@@ -504,13 +532,14 @@ class Context {
      * @param boolean [$force]
      * @return Context|mixed
      */
-    function param ($key, $value = null, $force = false) {
+    public function param($key, $value = null, $force = false)
+    {
         // get
         if (func_num_args() === 1) {
-            return key_exists($key, $this->ctx) ? $this->ctx->$key : null;
+            return property_exists($this->ctx, $key) ? $this->ctx->$key : null;
         }
         // set
-        if (!key_exists($key, $this->ctx) || $force) {
+        if (!property_exists($this->ctx, $key) || $force) {
             $this->ctx->$key = $value;
         }
         return $this;
@@ -524,11 +553,12 @@ class Context {
      *     ctx.content({ elem: 'control' });
      * });
      * ```
-     * @param BemJson [$value]
+     * @param array|Json [$value]
      * @param boolean [$force]
-     * @return BemJson|Context
+     * @return array|Json|Context
      */
-    function content ($value = null, $force = false) {
+    public function content($value = null, $force = false)
+    {
         if (func_num_args() === 0) {
             return !is_null($this->ctx->content) ? $this->ctx->content : null;
         }
@@ -552,7 +582,8 @@ class Context {
      * @param boolean [$force]
      * @return string|Context
      */
-    function html ($value = null, $force = false) {
+    public function html($value = null, $force = false)
+    {
         if (func_num_args() === 0) {
             return $this->ctx->html;
         }
@@ -575,7 +606,8 @@ class Context {
      * ```
      * @return Json
      */
-    function json () {
+    public function json()
+    {
         return $this->ctx;
     }
 
@@ -584,7 +616,8 @@ class Context {
      * @param array $bemjson
      * @return Json
      */
-    function phpize ($bemjson) {
+    public function phpize($bemjson)
+    {
         if (isList($bemjson)) {
             return JsonCollection::normalize($bemjson);
         }
@@ -596,7 +629,8 @@ class Context {
      * @param mixed $ex
      * @return boolean
      */
-    function isArray ($ex) {
+    public function isArray($ex)
+    {
         return isList($ex);
     }
 }

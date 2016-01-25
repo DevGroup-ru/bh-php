@@ -1,5 +1,5 @@
 {
-    "name": "bem/bh",
+    "name": "devgroup/bh",
     "description": "Template engine. BEMJSON -> HTML processor. PHP port of https://github.com/bem/bh",
     "keywords": [
         "bem",
