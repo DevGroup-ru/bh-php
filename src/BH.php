@@ -755,10 +755,39 @@ class BH
         return htmlspecialchars($s, ENT_NOQUOTES);
     }
 
+    /**
+     * Escapes attribute or cls.
+     * New BC-breaking feature added: ability to store unsafe(unescaped) values.
+     * Example of unsafe:
+     * ```
+     * [
+     *      'block' => 'myblock',
+     *      'cls' => [
+     *          'unsafe' => '<?= isset($item["red"])?"red":"" ?>',
+     *      ],
+     *      'attrs' => [
+     *          'data-key' => [
+     *              'unsafe' => '<?= $key ?>',
+     *          ],
+     *      ],
+     *  ],
+     * ```
+     * Will produce:
+     * ```
+     * <div class="myblock <?= isset($item["red"])?"red":"" ?>" data-key="<?= $key ?>"></div>
+     * ```
+     * Which is good for PHP-templates.
+     *
+     * @param $s
+     *
+     * @return string
+     */
     public static function attrEscape($s)
     {
         if (is_bool($s)) {
             return $s ? 'true' : 'false';
+        } elseif (isset($s['unsafe'])) {
+            return $s['unsafe'];
         }
         return htmlspecialchars($s, ENT_QUOTES);
     }
