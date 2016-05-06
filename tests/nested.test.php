@@ -9,7 +9,7 @@ class nestedTest extends PHPUnit_Framework_TestCase {
      */
     function setupBhInstance () {
         $this->bh = new BH();
-        $this->bh->setOptions(['indent' => ' ']);
+        $this->bh->setOptions(['indent' => 'xx', 'modsDelimiter' => '--']);
     }
 
     function test_it_should_return_bemjson_html () {
@@ -19,16 +19,25 @@ class nestedTest extends PHPUnit_Framework_TestCase {
                 'block' => 'nested',
                 'content' => [
                     'elem' => 'elem',
+                    'mods' => [
+                        'red'
+                    ]
                 ],
             ],
         ]);
         $test = '
 <div class="button">
-  <div class="nested">
-    <div class="nested__elem">
-    </div>
-  </div>
-</div>';
+xx
+xx<div class="nested">
+xxxx
+xxxx<div class="nested__elem nested__elem--red">
+xxxxxx
+xxxx</div>
+
+xx</div>
+
+</div>
+';
 //        echo "Test:[$test]\nOut:[$out]\n";
         $this->assertSame($test, $out);
 

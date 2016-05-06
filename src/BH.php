@@ -2,8 +2,6 @@
 
 namespace BEM;
 
-require_once "helpers.php";
-
 class BH
 {
 
@@ -21,7 +19,7 @@ class BH
     /**
      * Плоский массив для хранения матчеров.
      * Каждый элемент — массив с двумя элементами: [{String} выражение, {Function} шаблон}]
-     * @var array
+     * @var Matcher[]
      * @protected
      */
     protected $matchers = [];
@@ -111,6 +109,7 @@ class BH
      */
     public function __construct()
     {
+        require_once __DIR__ . '/helpers.php';
         $this->lib = new \ArrayObject([], \ArrayObject::ARRAY_AS_PROPS);
     }
 
@@ -234,7 +233,7 @@ class BH
      *
      * @chainable
      * @param string|array $expr bemSelector or map with matchers
-     * @param callable [$matcher]
+     * @param Matcher|\Closure $matcher
      * @return BH
      */
     public function match($expr, $matcher = null)
@@ -251,25 +250,93 @@ class BH
         }
 
         if (is_array($expr)) {
-            foreach ($expr as $k => $matcher) {
-                $this->match($k, $matcher);
+            foreach ($expr as $k => $matcherFromExpr) {
+                $this->match($k, $matcherFromExpr);
             }
             return $this;
         }
+        if ($matcher instanceof Matcher === false) {
+            $matcher = new Matcher($expr, $matcher);
+        }
 
-        $this->matchers[] = [ // better to make it via Matcher object with __invoke
-            'expr' => $expr,
-            'fn'   => $matcher,
-            '__id' => $this->lastMatchId
-        ];
+        $this->matchers[] = $matcher;
+        if ($matcher->id === null) {
+            $matcher->id = $this->lastMatchId;
+        }
+
         $this->lastMatchId++;
 
         // cleanup cached matcher to rebuild it on next render
 
-        $this->matcherBuilt = false;
+        $this->resetMatcherBuild();
 
 
         return $this;
+    }
+
+    /**
+     * Adds matcher returning it's ID
+     * @param $expr
+     * @param $matcher
+     *
+     * @return int
+     */
+    public function addMatcher($expr, $matcher)
+    {
+        $id = $this->lastMatchId;
+        $this->match($expr, $matcher);
+        return $id;
+    }
+
+    public function addMatcherList($list)
+    {
+        $ids = [];
+        foreach ($list as &$matcher) {
+            $ids[] = $this->matcher($matcher);
+        }
+        return $ids;
+    }
+
+    /**
+     * Add matcher by reference to Mathcer
+     * @param Matcher $matcher
+     */
+    public function matcher(&$matcher)
+    {
+        $this->match($matcher->expression, $matcher);
+        return $matcher->id;
+    }
+
+    /**
+     * Removes matcher by it's id
+     * @param $ids
+     *
+     * @return bool
+     */
+    public function removeMatcherById($ids)
+    {
+        $ids = (array) $ids;
+        $removed = 0;
+        foreach ($ids as $id) {
+            foreach ($this->matchers as $i => $matcher) {
+                if ($matcher->id === $id) {
+                    unset($this->matchers[$i]);
+                    $this->resetMatcherBuild();
+
+                    $removed++;
+                }
+            }
+        }
+        return count($ids)===$removed;
+    }
+
+    /**
+     * Resets matcherBuilt state
+     */
+    public function resetMatcherBuild()
+    {
+        $this->matcherBuilt = false;
+        $this->declByBlock = [];
     }
 
     /**
@@ -281,7 +348,7 @@ class BH
      * });
      * ```
      *
-     * @param \Closure $matcher
+     * @param \Closure|Matcher $matcher
      * @return BH
      */
     public function beforeEach($matcher)
@@ -298,7 +365,7 @@ class BH
      * });
      * ```
      *
-     * @param \Closure $matcher
+     * @param \Closure|Matcher $matcher
      * @return BH
      */
     public function afterEach($matcher)
@@ -313,10 +380,13 @@ class BH
             $this->matcherCalls = 0;
             $declarations = [];
             // Matchers->iterate
-            for ($i = sizeof($this->matchers) - 1; $i >= 0; $i--) {
-                $matcherInfo = $this->matchers[$i];
-                $decl = ['fn' => $matcherInfo['fn'], '__id' => $matcherInfo['__id'], 'index' => $i]
-                    + static::parseBemCssClasses($matcherInfo['expr'], $this->optModsDelimiter);
+            for ($i = count($this->matchers) - 1; $i >= 0; $i--) {
+//                $matcherInfo = $this->matchers[$i];
+                $matcher = &$this->matchers[$i];
+                $decl = static::parseBemCssClasses($matcher->expression, $this->optModsDelimiter);
+
+                $decl['matcher'] = &$this->matchers[$i];
+                $decl['index'] = $i;
                 $declarations[] = $decl;
             }
             $this->declByBlock = static::groupBy($declarations, 'block');
@@ -325,6 +395,7 @@ class BH
                     $blockData = static::groupBy($blockData, 'elem');
                 }
             }
+
             $this->matcherBuilt = true;
         }
     }
@@ -335,10 +406,10 @@ class BH
         // run before
         if (isset($declByBlock['$before'])) {
             foreach ($declByBlock['$before'] as $decl) {
-                $fnId = $decl['__id'];
+                $fnId = $decl['matcher']->id;
 
                 $json->_m[$fnId] = true;
-                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                $subRes = $decl['matcher']($ctx, $json);
                 if ($subRes !== null) {
                     return ($subRes ? : "");
                 }
@@ -361,7 +432,7 @@ class BH
                 foreach ($blockData as $elemName => $decls) {
                     if ($thisElem === $elemName) {
                         foreach ($decls as $decl) {
-                            $__id = $decl['__id'];
+                            $__id = $decl['matcher']->id;
                             $valid = !isset($json->_m[$__id]);
                             if ($valid && isset($decl['elemMod'])) {
                                 $modKey = $decl['elemMod'];
@@ -376,7 +447,7 @@ class BH
                             }
                             if ($valid === true) {
                                 $json->_m[$__id] = true;
-                                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                                $subRes = $decl['matcher']($ctx, $json);
                                 if ($subRes !== null) {
                                     return ($subRes ? : "");
                                 }
@@ -396,10 +467,10 @@ class BH
         // run after
         if ($afterEach !== null) {
             foreach ($afterEach as $decl) {
-                $fnId = $decl['__id'];
+                $fnId = $decl['matcher']->id;
 
                 $json->_m[$fnId] = true;
-                $subRes = $this->matchers[$decl['index']]["fn"]($ctx, $json);
+                $subRes = $decl['matcher']($ctx, $json);
                 if ($subRes !== null) {
                     return ($subRes ? : "");
                 }
@@ -440,7 +511,7 @@ class BH
             $bemJson = trim($bemJson, "\n\t\r ()\x0B\0");
             $c = $bemJson[0];
             $l = $bemJson[strlen($bemJson) - 1];
-            if ($c === '{' && $l === '}' || $c === '[' && $l === ']') {
+            if (($c === '{' && $l === '}') || ($c === '[' && $l === ']')) {
                 // if it looks like json object - parse and process
                 return $this->processBemJson(weakjson_decode($bemJson));
             } else {
@@ -450,7 +521,7 @@ class BH
         }
 
         $resultArr = JsonCollection::normalize($bemJson);
-        if (sizeof($resultArr) > 1) {
+        if (count($resultArr) > 1) {
             $resultArr = new \ArrayObject([$resultArr]);
         }
 
@@ -659,8 +730,9 @@ class BH
             if ($json->block) {
                 $cls = static::toBemCssClasses($json, $base, null, $this->optNobaseMods, $this->optModsDelimiter);
                 if ($json->js !== null && $json->js !== false) {
+                    /** @var array $jsParams */
                     $jsParams = [];
-                    $jsParams[$base] = $json->js === true ? [] : $this->filterNulls($json->js);
+                    $jsParams[$base] = $json->js === true ? [] : static::filterNulls($json->js);
                 }
             }
 
@@ -691,7 +763,7 @@ class BH
                     );
                     if ($mix->js !== null && $mix->js !== false) {
                         $jsParams = $jsParams ?: [];
-                        $jsParams[$mixBase] = $mix->js === true ? [] : $this->filterNulls($mix->js);
+                        $jsParams[$mixBase] = $mix->js === true ? [] : static::filterNulls($mix->js);
                         $hasMixJsParams = true;
                         if (!$addJSInitClass) {
                             $addJSInitClass = $mixBlock && ($this->optJsCls && ($this->optJsElem || !$mixElem));
@@ -747,6 +819,9 @@ class BH
             $this->html($json->content, $nestingLevel);
         }
         $this->buf .= $identation . '</' . $tag . '>';
+        if ($this->optIndent !== false) {
+            $this->buf .= "\n";
+        }
     }
 
     // todo: add encoding here
@@ -883,8 +958,7 @@ class BH
     public static function groupBy($data, $key)
     {
         $res = [];
-        for ($i = 0, $l = sizeof($data); $i < $l; $i++) {
-            $item = $data[$i];
+        foreach ($data as $i=>$item) {
             $value = empty($item[$key]) ? __undefined : $item[$key];
             if (empty($res[$value])) {
                 $res[$value] = [];
