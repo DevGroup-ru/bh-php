@@ -2,6 +2,8 @@
 
 namespace BEM;
 
+use yii\helpers\ArrayHelper;
+
 class BH
 {
 
@@ -380,12 +382,11 @@ class BH
             $this->matcherCalls = 0;
             $declarations = [];
             // Matchers->iterate
-            for ($i = count($this->matchers) - 1; $i >= 0; $i--) {
-//                $matcherInfo = $this->matchers[$i];
-                $matcher = &$this->matchers[$i];
+            $reversedMatchers = array_reverse($this->matchers);
+            foreach ($reversedMatchers as $i => &$matcher) {
                 $decl = static::parseBemCssClasses($matcher->expression, $this->optModsDelimiter);
 
-                $decl['matcher'] = &$this->matchers[$i];
+                $decl['matcher'] = &$matcher;
                 $decl['index'] = $i;
                 $declarations[] = $decl;
             }

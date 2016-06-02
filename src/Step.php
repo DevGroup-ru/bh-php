@@ -3,7 +3,7 @@
 namespace BEM;
 
 class Step {
-
+    /** @var  Json */
     public $json;
     public $arr;
     public $index;
