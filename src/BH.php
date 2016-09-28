@@ -793,7 +793,7 @@ class BH
 
         $cls = (string)$cls;
         if ($json->cls !== null) {
-            $cls .= ($cls ? ' ' : '') . trim(self::attrEscape($json->cls));
+            $cls .= ($cls ? ' ' : '') . trim($json->cls);
         }
 
         $identation = '';
