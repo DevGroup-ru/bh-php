@@ -35,12 +35,12 @@ class cls extends PHPUnit_Framework_TestCase {
             '<div class="button btn"></div>',
             $this->bh->apply(['block' => 'button']));
     }
-    function test_it_should_escape_cls () {
+    function test_it_should_escape_attr () {
         $this->bh->match('button', function ($ctx) {
-            $ctx->cls('url="a=b&c=d"');
+            $ctx->attr('title', 'url="a=b&c=d"');
         });
         $this->assertEquals(
-            '<div class="button url=&quot;a=b&amp;c=d&quot;"></div>',
+            '<div class="button" title="url=&quot;a=b&amp;c=d&quot;"></div>',
             $this->bh->apply(['block' => 'button']));
     }
     function test_it_should_not_override_user_cls () {

@@ -37,7 +37,7 @@ class Context {
     public function __construct($bh)
     {
         $this->bh = $bh;
-        $this->expandoId = floor(microtime(1)*1000);
+        $this->expandoId = md5(uniqid('', true));
     }
 
     /**
